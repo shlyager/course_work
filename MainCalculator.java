@@ -1,56 +1,66 @@
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
 public class MainCalculator {
     private static final int VARIANT = 15;
-    private static final int THREAD_COUNT = 1;
-    private static final String DIRECTORY_NAME = "D:\\aclImdb\\aclImdb\\test\\neg";
-    private static final String WORD = "was";
-    private static final int FILE_NUMBER = 12500;
+    private static final int THREAD_COUNT = 5;
+    private static final int FILE_NUMBER1 = 12500;
+    private static final int FILE_NUMBER2 = 50000;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
+
+        List<String> paths = new ArrayList<>();
+
+        paths.add("D:\\aclImdb\\aclImdb\\test\\neg");
+        paths.add("D:\\aclImdb\\aclImdb\\test\\pos");
+        paths.add("D:\\aclImdb\\aclImdb\\train\\neg");
+        paths.add("D:\\aclImdb\\aclImdb\\train\\pos");
+        paths.add("D:\\aclImdb\\aclImdb\\unsup");
+
+        HashMap<String, HashSet<File>> invertedIndex = new HashMap<>();
+
+        List<File> files = new ArrayList<>();
+
+        for(int i = 0; i < paths.size(); i++) {
+            files.addAll(i == paths.size() - 1
+                    ? getFiles(VARIANT, FILE_NUMBER2, paths.get(i))
+                    : getFiles(VARIANT, FILE_NUMBER1, paths.get(i)));
+        }
+
+        final int SIZE = files.size();
+        int filesPerThread = SIZE / THREAD_COUNT;
+
+        IndexCalculator[] threadArray = new IndexCalculator[THREAD_COUNT];
+
         long start = System.currentTimeMillis();
-        test();
-        System.out.println("time: "+(System.currentTimeMillis()- start));
-    }
 
+        for(int i = 0; i < THREAD_COUNT; i++) {
+            threadArray[i] = new IndexCalculator(files, filesPerThread * i, filesPerThread);
+            threadArray[i].start();
+        }
 
-    public static void test() {
-        Map<String, List<Integer>> pathIndexMap = new HashMap<>();
-        pathIndexMap = Collections.synchronizedMap(pathIndexMap);
-        List<Thread> threads = new ArrayList<>();
-        List<File> files = getFiles(VARIANT, FILE_NUMBER, DIRECTORY_NAME);
-        int part = files.size() / THREAD_COUNT;
-        int sum = 0;
-        for (int a = 0; a < THREAD_COUNT; a++){
-            Thread thread;
-            if(a == THREAD_COUNT-1) {
-                thread = new Thread(new IndexCalculator(WORD, files.stream().skip(a * part).collect(Collectors.toList()), pathIndexMap));
-            }else {
-                thread = new Thread(new IndexCalculator(WORD, files.stream().skip(a * part).limit(part).collect(Collectors.toList()), pathIndexMap));
-            }
-            threads.add(thread);
-            thread.start();
+        for(int i = 0; i < THREAD_COUNT; i++) {
+            threadArray[i].join();
         }
-        for (Thread thread : threads){
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+
+        for(int threadN = 0; threadN < THREAD_COUNT; threadN++){
+            threadArray[threadN]
+                    .getInvertedIndex()
+                    .forEach((k, v) -> invertedIndex.merge(k, v, (v1, v2) -> {
+                        HashSet<File> set = new HashSet<>(v1);
+                        set.addAll(v2);
+                        return set;
+                    }));
         }
-        for (Entry<String, List<Integer>>  entry : pathIndexMap.entrySet()){
-            System.out.println("In file "+ entry.getKey() + "Indexes :");
-            entry.getValue().stream().forEachOrdered(x -> System.out.println( x + "  "));
-        }
+
+        System.out.println("time: "+(System.currentTimeMillis() - start));
+
+        System.out.println(invertedIndex);
     }
 
     public static List<File> getFiles(int variant, int fileNumber, String directoryName) {

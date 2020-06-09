@@ -4,34 +4,46 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
 
-class IndexCalculator implements Runnable {
-    private Map<String, List<Integer>> wordIndexMap;
-    private String word;
+class IndexCalculator extends Thread {
+    private Map<String, HashSet<File>> invertedIndex;
     private List<File> files;
+    private int startIdx;
+    private int filesNumber;
 
-    public IndexCalculator(String word, List<File> files, Map<String, List<Integer>> wordIndexMap) {
-        this.wordIndexMap = wordIndexMap;
-        this.word = word;
+    public IndexCalculator(List<File> files, int startIdx, int filesNumber) {
         this.files = files;
+        this.startIdx = startIdx;
+        this.filesNumber = filesNumber;
+    }
+
+    public Map<String, HashSet<File>> getInvertedIndex() {
+        return invertedIndex;
     }
 
     @Override
     public void run() {
-        HashMap<String, List<Integer>> wordIndexMap = new HashMap<>();
-        for (File file : files) {
+        invertedIndex = new HashMap<>();
+        List<File> filesToCompute = files.subList(startIdx, startIdx + filesNumber);
+        for (File file : filesToCompute) {
             try (FileReader fileReader = new FileReader(file)) {
                 BufferedReader bufferedReader = new BufferedReader(fileReader);
-                String b;
-                while ((b = (bufferedReader.readLine())) != null) {
-                    List<String> wordsList = Arrays.asList(b.replaceAll("<br />", " ")
+                String line;
+                while ((line = (bufferedReader.readLine())) != null) {
+                    List<String> wordsList = Arrays.asList(line.replaceAll("<br />", " ")
+                            .toLowerCase()
                             .replaceAll("\\W", " ")
                             .replaceAll(" +", " ")
+                            .replaceAll("[\\\\.$|,|;|']", " ")
+                            .trim()
                             .split(" "));
-                    if (wordsList.contains(word)) {
-                        if (!this.wordIndexMap.containsKey(file.getName())) {
-                            this.wordIndexMap.put(file.getName(), new ArrayList<>());
+                    for(String word : wordsList) {
+                        if (invertedIndex.containsKey(word)) {
+                            invertedIndex.get(word).add(file);
+                        } else {
+                            HashSet<File> filesToPut = new HashSet<>();
+                            filesToPut.add(file);
+                            invertedIndex.put(word, filesToPut);
                         }
-                        this.wordIndexMap.get(file.getName()).add(wordsList.indexOf(word));
                     }
                 }
             } catch (IOException e) {
